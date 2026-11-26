@@ -32,6 +32,7 @@ export default function AdminDashboard() {
   const [logoutBtnHovered, setLogoutBtnHovered] = useState(false);
 
   const [stores, setStores] = useState([]);
+  const [storeSearch, setStoreSearch] = useState('');
   const [admins, setAdmins] = useState([]);
   const [overviewStats, setOverviewStats] = useState({
     totalOffers: 0,
@@ -534,6 +535,18 @@ export default function AdminDashboard() {
     (sum, s) => sum + Number(s.customer_count ?? s.customers_count ?? 0),
     0
   );
+
+  const sortedStores = [...stores]
+    .filter((s) => {
+      const query = storeSearch.trim().toLowerCase();
+      if (!query) return true;
+      return String(s.name || '').toLowerCase().includes(query);
+    })
+    .sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+        sensitivity: 'base',
+      })
+    );
 
   const overviewCards = [
     {
@@ -1620,143 +1633,178 @@ export default function AdminDashboard() {
                   </form>
                 </div>
 
-                {/* Desktop Table */}
-                <div
-                  className="gw-card gw-desktop-table-card"
-                  style={{ padding: 0, overflow: 'hidden' }}
-                >
-                  <div className="gw-aligned-table-wrap">
-                    <table className="gw-table gw-aligned-table">
-                      <colgroup>
-                        <col style={{ width: '15%' }} />
-                        <col style={{ width: '23%' }} />
-                        <col style={{ width: '11%' }} />
-                        <col style={{ width: '12%' }} />
-                        <col style={{ width: '39%' }} />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <th>{t('colStore')}</th>
-                          <th>{t('colEmail')}</th>
-                          <th>{t('colCustomers')}</th>
-                          <th>{t('colStatus')}</th>
-                          <th>{t('colAction')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {stores.map((s) => (
-                          <tr key={s.id} className="gw-table-row">
-                            <td title={s.name}><strong>{s.name}</strong></td>
-                            <td title={s.email}>{s.email}</td>
-                            <td>{s.customer_count}</td>
-                            <td>
-                              <span
-                                className={`gw-badge ${
-                                  s.is_active ? 'gw-badge-active' : 'gw-badge-inactive'
-                                }`}
-                              >
-                                {s.is_active ? t('statusActive') : t('statusInactive')}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="gw-aligned-actions">
-                                <button
-                                  type="button"
-                                  onClick={() => handleViewStore(s)}
-                                  className="gw-store-action-btn"
-                                  style={{
-                                    ...actionBtnBaseStyle,
-                                    backgroundColor: '#eff6ff',
-                                    color: '#1d4ed8',
-                                    border: '1px solid #bfdbfe',
-                                  }}
-                                >
-                                  <span aria-hidden="true">👁</span>
-                                  <span>{lang === 'de' ? 'Ansehen' : 'View'}</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleStoreStatus(s)}
-                                  className="gw-store-action-btn"
-                                  style={{
-                                    ...actionBtnBaseStyle,
-                                    backgroundColor: s.is_active ? '#fee2e2' : '#dcfce7',
-                                    color: s.is_active ? '#991b1b' : '#166534',
-                                    border: `1px solid ${
-                                      s.is_active ? '#fecaca' : '#bbf7d0'
-                                    }`,
-                                  }}
-                                >
-                                  <span>
-                                    {s.is_active ? t('actionDisable') : t('actionEnable')}
-                                  </span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => openEditStoreModal(s)}
-                                  className="gw-store-action-btn"
-                                  style={{
-                                    ...actionBtnBaseStyle,
-                                    backgroundColor: '#f3e8ff',
-                                    color: '#6d28d9',
-                                    border: '1px solid #ddd6fe',
-                                  }}
-                                >
-                                  <span aria-hidden="true">✎</span>
-                                  <span>{lang === 'de' ? 'Bearbeiten' : 'Edit'}</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteStore(s)}
-                                  className="gw-store-action-btn"
-                                  style={{
-                                    ...actionBtnBaseStyle,
-                                    backgroundColor: '#fee2e2',
-                                    color: '#991b1b',
-                                    border: '1px solid #fecaca',
-                                  }}
-                                >
-                                  <span aria-hidden="true">🗑</span>
-                                  <span>{lang === 'de' ? 'Löschen' : 'Delete'}</span>
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                {/* Store Name Search Bar */}
+                <div className="gw-card" style={{ marginBottom: '16px' }}>
+                  <div className="gw-field" style={{ margin: 0 }}>
+                    <input
+                      type="text"
+                      className="gw-input"
+                      placeholder={
+                        lang === 'de'
+                          ? 'Geschäft nach Namen suchen...'
+                          : 'Search store by name...'
+                      }
+                      value={storeSearch}
+                      onChange={(e) => setStoreSearch(e.target.value)}
+                    />
                   </div>
                 </div>
 
-                {/* Mobile Cards */}
-                <div className="gw-mobile-list">
-                  {stores.map((s) => (
-                    <div key={s.id} className="gw-mobile-entity-card">
-                      <div>
-                        <div className="gw-mobile-entity-title">{s.name}</div>
-                        <div className="gw-mobile-entity-sub">{s.email}</div>
-                      </div>
+                {sortedStores.length === 0 ? (
+                  <div className="gw-card">
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: '14px',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      {lang === 'de'
+                        ? 'Keine passenden Geschäfte gefunden.'
+                        : 'No matching stores found.'}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Desktop Table */}
+                    <div
+                      className="gw-card gw-desktop-table-card"
+                      style={{ padding: 0, overflow: 'hidden' }}
+                    >
+                      <div className="gw-aligned-table-wrap">
+                        <table className="gw-table gw-aligned-table">
+                          <colgroup>
+                            <col style={{ width: '15%' }} />
+                            <col style={{ width: '23%' }} />
+                            <col style={{ width: '11%' }} />
+                            <col style={{ width: '12%' }} />
+                            <col style={{ width: '39%' }} />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>{t('colStore')}</th>
+                              <th>{t('colEmail')}</th>
+                              <th>{t('colCustomers')}</th>
+                              <th>{t('colStatus')}</th>
+                              <th>{t('colAction')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedStores.map((s) => (
+                              <tr key={s.id} className="gw-table-row">
+                                <td title={s.name}><strong>{s.name}</strong></td>
+                                <td title={s.email}>{s.email}</td>
+                                <td>{s.customer_count}</td>
+                                <td>
+                                  <span
+                                    className={`gw-badge ${
+                                      s.is_active ? 'gw-badge-active' : 'gw-badge-inactive'
+                                    }`}
+                                  >
+                                    {s.is_active ? t('statusActive') : t('statusInactive')}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="gw-aligned-actions">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleViewStore(s)}
+                                      className="gw-store-action-btn"
+                                      style={{
+                                        ...actionBtnBaseStyle,
+                                        backgroundColor: '#eff6ff',
+                                        color: '#1d4ed8',
+                                        border: '1px solid #bfdbfe',
+                                      }}
+                                    >
+                                      <span aria-hidden="true">👁</span>
+                                      <span>{lang === 'de' ? 'Ansehen' : 'View'}</span>
+                                    </button>
 
-                      <div className="gw-mobile-entity-row">
-                        <span style={{ fontWeight: 600 }}>
-                          {t('colCustomers')}: {s.customer_count}
-                        </span>
-                        <span
-                          className={`gw-badge ${
-                            s.is_active ? 'gw-badge-active' : 'gw-badge-inactive'
-                          }`}
-                        >
-                          {s.is_active ? t('statusActive') : t('statusInactive')}
-                        </span>
-                      </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleStoreStatus(s)}
+                                      className="gw-store-action-btn"
+                                      style={{
+                                        ...actionBtnBaseStyle,
+                                        backgroundColor: s.is_active ? '#fee2e2' : '#dcfce7',
+                                        color: s.is_active ? '#991b1b' : '#166534',
+                                        border: `1px solid ${
+                                          s.is_active ? '#fecaca' : '#bbf7d0'
+                                        }`,
+                                      }}
+                                    >
+                                      <span>
+                                        {s.is_active ? t('actionDisable') : t('actionEnable')}
+                                      </span>
+                                    </button>
 
-                      {renderStoreActions(s)}
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditStoreModal(s)}
+                                      className="gw-store-action-btn"
+                                      style={{
+                                        ...actionBtnBaseStyle,
+                                        backgroundColor: '#f3e8ff',
+                                        color: '#6d28d9',
+                                        border: '1px solid #ddd6fe',
+                                      }}
+                                    >
+                                      <span aria-hidden="true">✎</span>
+                                      <span>{lang === 'de' ? 'Bearbeiten' : 'Edit'}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteStore(s)}
+                                      className="gw-store-action-btn"
+                                      style={{
+                                        ...actionBtnBaseStyle,
+                                        backgroundColor: '#fee2e2',
+                                        color: '#991b1b',
+                                        border: '1px solid #fecaca',
+                                      }}
+                                    >
+                                      <span aria-hidden="true">🗑</span>
+                                      <span>{lang === 'de' ? 'Löschen' : 'Delete'}</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Mobile Cards */}
+                    <div className="gw-mobile-list">
+                      {sortedStores.map((s) => (
+                        <div key={s.id} className="gw-mobile-entity-card">
+                          <div>
+                            <div className="gw-mobile-entity-title">{s.name}</div>
+                            <div className="gw-mobile-entity-sub">{s.email}</div>
+                          </div>
+
+                          <div className="gw-mobile-entity-row">
+                            <span style={{ fontWeight: 600 }}>
+                              {t('colCustomers')}: {s.customer_count}
+                            </span>
+                            <span
+                              className={`gw-badge ${
+                                s.is_active ? 'gw-badge-active' : 'gw-badge-inactive'
+                              }`}
+                            >
+                              {s.is_active ? t('statusActive') : t('statusInactive')}
+                            </span>
+                          </div>
+
+                          {renderStoreActions(s)}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
