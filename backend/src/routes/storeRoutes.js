@@ -200,7 +200,85 @@ router.patch('/offers/:id/status', async (req, res) => {
   }
 });
 
-// 5b. List Store Customers
+// 5a. Update Offer (Edit -> Save)
+router.patch('/offers/:id', async (req, res) => {
+  const storeId = getStoreId(req);
+  const { title, description, pointsRequired, points_required } = req.body;
+  const cleanTitle = String(title || '').trim();
+  const cleanDesc =
+    description === undefined || description === null
+      ? null
+      : String(description).trim() || null;
+  const parsedPoints = Number(pointsRequired ?? points_required);
+
+  if (!cleanTitle || !Number.isInteger(parsedPoints) || parsedPoints < 1) {
+    return res
+      .status(400)
+      .json({ error: 'Title and valid pointsRequired are required' });
+  }
+
+  try {
+    const result = await db.query(
+      `UPDATE offers
+       SET title = $1, description = $2, points_required = $3
+       WHERE id = $4 AND store_id = $5
+       RETURNING *`,
+      [cleanTitle, cleanDesc, parsedPoints, req.params.id, storeId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Offer not found' });
+    }
+
+    return res.json({ offer: result.rows[0] });
+  } catch (err) {
+    console.error('Update offer error:', err);
+    return res.status(500).json({ error: 'Failed to update offer' });
+  }
+});
+
+// 5b. Delete Offer
+router.delete('/offers/:id', async (req, res) => {
+  const storeId = getStoreId(req);
+  const client = await db.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const checkRes = await client.query(
+      'SELECT id FROM offers WHERE id = $1 AND store_id = $2',
+      [req.params.id, storeId]
+    );
+
+    if (checkRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Offer not found' });
+    }
+
+    await client.query(
+      'UPDATE point_transactions SET offer_id = NULL WHERE offer_id = $1 AND store_id = $2',
+      [req.params.id, storeId]
+    );
+
+    const delRes = await client.query(
+      `DELETE FROM offers
+       WHERE id = $1 AND store_id = $2
+       RETURNING id`,
+      [req.params.id, storeId]
+    );
+
+    await client.query('COMMIT');
+    return res.json({ deleted: true, id: delRes.rows[0].id });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Delete offer error:', err);
+    return res.status(500).json({ error: 'Failed to delete offer' });
+  } finally {
+    client.release();
+  }
+});
+
+// 5c. List Store Customers
 router.get('/customers', async (req, res) => {
   const storeId = getStoreId(req);
   try {
@@ -218,7 +296,7 @@ router.get('/customers', async (req, res) => {
   }
 });
 
-// 5c. List Store Point Transactions
+// 5d. List Store Point Transactions
 router.get('/transactions', async (req, res) => {
   const storeId = getStoreId(req);
   try {
@@ -614,7 +692,7 @@ router.delete('/customers/:id', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const custRes = await client.query(
+    const custRes = await db.query(
       'SELECT id FROM customers WHERE id = $1 AND store_id = $2',
       [req.params.id, storeId]
     );

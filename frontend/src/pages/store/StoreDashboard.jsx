@@ -10,7 +10,7 @@ import { resetViewportZoom } from '../../utils/viewport';
 
 export default function StoreDashboard() {
   const { t, lang } = useLanguage();
-  const { user, logout } = useAuth();
+  const { user, logout, isImpersonating, exitImpersonation } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -58,10 +58,16 @@ export default function StoreDashboard() {
   const [pointsRatePoints, setPointsRatePoints] = useState('10');
   const [savingRate, setSavingRate] = useState(false);
 
-  // Offer creation state
+  // Offer creation & edit/delete state
   const [offerTitle, setOfferTitle] = useState('');
   const [offerDescription, setOfferDescription] = useState('');
   const [pointsRequired, setPointsRequired] = useState('');
+  const [editingOfferId, setEditingOfferId] = useState(null);
+  const [editOfferTitle, setEditOfferTitle] = useState('');
+  const [editOfferDescription, setEditOfferDescription] = useState('');
+  const [editPointsRequired, setEditPointsRequired] = useState('');
+  const [savingEditOffer, setSavingEditOffer] = useState(false);
+  const [deletingOfferId, setDeletingOfferId] = useState(null);
 
   // Customer registration state (grid + required phone before birthday + consent)
   const [customerFirstName, setCustomerFirstName] = useState('');
@@ -634,6 +640,80 @@ export default function StoreDashboard() {
     }
   };
 
+  const startEditOffer = (offer) => {
+    setErrorMsg('');
+    setStatusMsg('');
+    setEditingOfferId(offer.id);
+    setEditOfferTitle(offer.title || '');
+    setEditOfferDescription(offer.description || '');
+    setEditPointsRequired(String(offer.points_required ?? ''));
+  };
+
+  const cancelEditOffer = () => {
+    setEditingOfferId(null);
+    setEditOfferTitle('');
+    setEditOfferDescription('');
+    setEditPointsRequired('');
+  };
+
+  const handleUpdateOffer = async (e, offerId) => {
+    e.preventDefault();
+    resetViewportZoom();
+    setErrorMsg('');
+    setStatusMsg('');
+    setSavingEditOffer(true);
+    try {
+      await apiClient.patch(`/store/offers/${offerId}`, {
+        title: editOfferTitle.trim(),
+        description: editOfferDescription.trim(),
+        pointsRequired: Number(editPointsRequired),
+      });
+      setStatusMsg(lang === 'de' ? 'Angebot aktualisiert.' : 'Offer updated.');
+      cancelEditOffer();
+      await Promise.all([loadOffers(), loadOverviewData()]);
+    } catch (err) {
+      setErrorMsg(
+        err.response?.data?.error ||
+          (lang === 'de'
+            ? 'Angebot konnte nicht aktualisiert werden.'
+            : 'Failed to update offer')
+      );
+    } finally {
+      setSavingEditOffer(false);
+      resetViewportZoom();
+    }
+  };
+
+  const handleDeleteOffer = async (offer) => {
+    if (!offer?.id) return;
+    resetViewportZoom();
+    setErrorMsg('');
+    setStatusMsg('');
+    setDeletingOfferId(offer.id);
+    try {
+      await apiClient.delete(`/store/offers/${offer.id}`);
+      if (editingOfferId === offer.id) {
+        cancelEditOffer();
+      }
+      setStatusMsg(
+        lang === 'de'
+          ? `Angebot "${offer.title}" gelöscht.`
+          : `Offer "${offer.title}" deleted.`
+      );
+      await Promise.all([loadOffers(), loadOverviewData()]);
+    } catch (err) {
+      setErrorMsg(
+        err.response?.data?.error ||
+          (lang === 'de'
+            ? 'Angebot konnte nicht gelöscht werden.'
+            : 'Failed to delete offer')
+      );
+    } finally {
+      setDeletingOfferId(null);
+      resetViewportZoom();
+    }
+  };
+
   const handleToggleOffer = async (offer) => {
     resetViewportZoom();
     setErrorMsg('');
@@ -821,6 +901,20 @@ export default function StoreDashboard() {
     }
   };
 
+  const handleExitImpersonation = () => {
+    resetViewportZoom();
+    const returnTab = sessionStorage.getItem('gw_admin_return_tab');
+    if (returnTab) {
+      sessionStorage.removeItem('gw_admin_return_tab');
+      sessionStorage.setItem('gw_admin_next_tab', returnTab);
+    } else {
+      sessionStorage.setItem('gw_admin_next_tab', 'stores');
+    }
+    const restored = exitImpersonation();
+    navigate(restored ? '/admin' : '/login');
+    setTimeout(() => resetViewportZoom(), 150);
+  };
+
   const handleLogout = () => {
     resetViewportZoom();
     logout();
@@ -852,6 +946,9 @@ export default function StoreDashboard() {
   const selectCategory = (tab) => {
     resetViewportZoom();
     setActiveTab(tab);
+    if (tab !== 'offers') {
+      cancelEditOffer();
+    }
     if (tab !== 'overview') {
       if (customersPanelTimerRef.current) {
         clearTimeout(customersPanelTimerRef.current);
@@ -962,6 +1059,221 @@ export default function StoreDashboard() {
           pointer-events: none;
           will-change: transform, opacity;
         }
+
+        .gw-offer-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: nowrap;
+        }
+        .gw-offer-icon-btn {
+          height: 34px;
+          padding: 0 11px;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          font-size: 12.5px;
+          font-weight: 600;
+          line-height: 1;
+          white-space: nowrap;
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: all 0.18s ease;
+        }
+        .gw-offer-edit-btn {
+          background-color: rgba(124, 58, 237, 0.1);
+          color: #6d28d9;
+          border: 1px solid rgba(124, 58, 237, 0.28);
+        }
+        .gw-offer-edit-btn:hover {
+          background-color: rgba(124, 58, 237, 0.18);
+        }
+        .gw-offer-delete-btn {
+          background-color: #fee2e2;
+          color: #991b1b;
+          border: 1px solid #fecaca;
+        }
+        .gw-offer-delete-btn:hover {
+          background-color: #fecaca;
+        }
+        .gw-offer-mobile-meta {
+          display: none;
+        }
+
+        .gw-offers-table-card,
+        .gw-offers-table-card * {
+          -webkit-tap-highlight-color: transparent;
+        }
+        .gw-offers-table-card .gw-table-row,
+        .gw-offers-table-card .gw-table-row:hover,
+        .gw-offers-table-card .gw-table-row:focus,
+        .gw-offers-table-card .gw-table-row:focus-within,
+        .gw-offers-table-card .gw-table-row:active {
+          background: #ffffff !important;
+          background-color: #ffffff !important;
+          outline: none !important;
+        }
+        .gw-offers-table-card td,
+        .gw-offers-table-card td:hover,
+        .gw-offers-table-card td:focus,
+        .gw-offers-table-card td:focus-within,
+        .gw-offers-table-card td:active {
+          background: transparent !important;
+          background-color: transparent !important;
+          outline: none !important;
+        }
+        .gw-offers-table-card button:focus,
+        .gw-offers-table-card button:focus-visible {
+          outline: none !important;
+          box-shadow: none !important;
+        }
+
+        @media (min-width: 769px) {
+          .gw-offers-table-card .gw-table {
+            width: 100%;
+            table-layout: fixed;
+          }
+          .gw-offers-table-card .gw-table th,
+          .gw-offers-table-card .gw-table td {
+            vertical-align: middle;
+            box-sizing: border-box;
+          }
+          .gw-offers-table-card .gw-table th:nth-child(1),
+          .gw-offers-table-card .gw-table td:nth-child(1) {
+            width: 34%;
+            padding-right: 24px;
+          }
+          .gw-offers-table-card .gw-table th:nth-child(2),
+          .gw-offers-table-card .gw-table td:nth-child(2) {
+            width: 13%;
+          }
+          .gw-offers-table-card .gw-table th:nth-child(3),
+          .gw-offers-table-card .gw-table td:nth-child(3) {
+            width: 15%;
+          }
+          .gw-offers-table-card .gw-table th:nth-child(4),
+          .gw-offers-table-card .gw-table td:nth-child(4) {
+            width: 38%;
+            text-align: right;
+          }
+          .gw-offers-table-card .gw-offer-actions {
+            gap: 16px;
+            justify-content: flex-end;
+            width: 100%;
+          }
+          .gw-offers-table-card .gw-offer-actions .gw-btn-sm {
+            padding: 0 14px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .gw-offers-table-card .gw-offer-actions .gw-offer-icon-btn:first-of-type {
+            margin-left: 2px;
+            position: relative;
+          }
+          .gw-offers-table-card .gw-offer-actions .gw-offer-icon-btn:first-of-type::before {
+            content: "";
+            position: absolute;
+            left: -9px;
+            top: 6px;
+            bottom: 6px;
+            width: 1px;
+            background-color: #e5e7eb;
+          }
+          .gw-offers-table-card .gw-offer-icon-btn {
+            height: 36px;
+            padding: 0 12px;
+            border-radius: 10px;
+            font-size: 13px;
+          }
+          .gw-offer-edit-inline-grid {
+            display: grid;
+            grid-template-columns: minmax(150px, 1.25fr) minmax(170px, 1.5fr) 100px auto;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+          }
+          .gw-offer-edit-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .gw-offers-table-card {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            overflow: visible !important;
+          }
+          .gw-offers-table-card .gw-table-wrap {
+            overflow: visible;
+          }
+          .gw-offers-table-card .gw-table thead {
+            display: none;
+          }
+          .gw-offers-table-card .gw-table,
+          .gw-offers-table-card .gw-table tbody,
+          .gw-offers-table-card .gw-table tr,
+          .gw-offers-table-card .gw-table td {
+            display: block;
+            width: 100% !important;
+          }
+          .gw-offers-table-card .gw-table-row {
+            background: #ffffff !important;
+            border: 1px solid var(--border-color, #e5e7eb);
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+          }
+          .gw-offers-table-card .gw-table td {
+            border: none !important;
+            padding: 0 !important;
+          }
+          .gw-offers-table-card .gw-offer-desktop-col {
+            display: none !important;
+          }
+          .gw-offer-mobile-meta {
+            display: flex !important;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #f1f5f9;
+          }
+          .gw-offer-mobile-footer {
+            display: flex !important;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #f1f5f9;
+          }
+          .gw-offer-mobile-footer .gw-offer-icon-btn {
+            padding: 0 9px;
+            font-size: 12px;
+            gap: 4px;
+          }
+          .gw-offer-edit-mobile-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+          .gw-offer-edit-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+          }
+        }
       `}</style>
 
       <button
@@ -1018,9 +1330,20 @@ export default function StoreDashboard() {
             <span>{lang === 'de' ? 'Profil' : 'Profile'}</span>
           </div>
 
-          <div className="gw-profile-details">
-            <div className="gw-profile-box">
-              <div className="gw-profile-label">
+          <div className="gw-profile-details" style={{ gap: '14px' }}>
+            <div
+              className="gw-profile-box"
+              style={{
+                background: 'rgba(24, 24, 27, 0.14)',
+                border: '1px solid rgba(255, 255, 255, 0.18)',
+                borderRadius: '14px',
+                padding: '14px',
+              }}
+            >
+              <div
+                className="gw-profile-label"
+                style={{ letterSpacing: '0.08em', fontSize: '11px' }}
+              >
                 {lang === 'de' ? 'Geschäftslogo' : 'Store Logo'}
               </div>
 
@@ -1029,8 +1352,8 @@ export default function StoreDashboard() {
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '10px',
-                  marginTop: '6px',
+                  gap: '12px',
+                  marginTop: '10px',
                 }}
               >
                 <div
@@ -1044,23 +1367,25 @@ export default function StoreDashboard() {
                     }
                   }}
                   style={{
+                    position: 'relative',
                     width: '100%',
-                    maxWidth: '220px',
-                    height: '92px',
+                    maxWidth: '228px',
+                    height: '98px',
                     borderRadius: '14px',
-                    border: '1px dashed var(--border-color, #d1d5db)',
+                    border: logoBtnHovered
+                      ? '1.5px solid #f59e0b'
+                      : '1px solid rgba(255, 255, 255, 0.25)',
                     background: '#ffffff',
+                    boxShadow: '0 8px 20px rgba(15, 23, 42, 0.18)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     overflow: 'hidden',
                     cursor: 'pointer',
+                    transition: 'border-color 0.2s ease, transform 0.2s ease',
+                    transform: logoBtnHovered ? 'translateY(-1px)' : 'translateY(0)',
                   }}
-                  title={
-                    lang === 'de'
-                      ? 'Logo hochladen'
-                      : 'Upload store logo'
-                  }
+                  title={lang === 'de' ? 'Logo hochladen' : 'Upload store logo'}
                 >
                   {storeLogo ? (
                     <img
@@ -1070,14 +1395,15 @@ export default function StoreDashboard() {
                         width: '100%',
                         height: '100%',
                         objectFit: 'contain',
-                        padding: '8px 12px',
+                        padding: '10px 14px',
                       }}
                     />
                   ) : (
                     <span
                       style={{
-                        fontSize: '12px',
-                        color: 'var(--text-muted, #6b7280)',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        color: '#6b7280',
                         textAlign: 'center',
                         padding: '8px',
                       }}
@@ -1103,33 +1429,27 @@ export default function StoreDashboard() {
                   onMouseLeave={() => setLogoBtnHovered(false)}
                   style={{
                     width: '100%',
-                    maxWidth: '220px',
+                    maxWidth: '228px',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '7px',
-                    padding: '8px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid rgba(255, 255, 255, 0.35)',
-                    background: logoBtnHovered
-                      ? '#ffffff'
-                      : 'rgba(255, 255, 255, 0.94)',
-                    color: '#4c1d95',
-                    fontSize: '12.5px',
-                    fontWeight: 700,
+                    padding: '9px 14px',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(245, 158, 11, 0.55)',
+                    background: logoBtnHovered ? '#fbbf24' : '#f59e0b',
+                    color: '#1e1b4b',
+                    fontSize: '13px',
+                    fontWeight: 800,
                     letterSpacing: '0.2px',
                     boxShadow: logoBtnHovered
-                      ? '0 6px 16px rgba(15, 23, 42, 0.22)'
-                      : '0 2px 8px rgba(15, 23, 42, 0.14)',
+                      ? '0 6px 16px rgba(245, 158, 11, 0.35)'
+                      : '0 2px 10px rgba(15, 23, 42, 0.16)',
                     transform: logoBtnHovered ? 'translateY(-1px)' : 'translateY(0)',
                     transition: 'all 0.2s ease',
                     cursor: uploadingLogo ? 'wait' : 'pointer',
                     opacity: uploadingLogo ? 0.75 : 1,
                   }}
                 >
-                  <span aria-hidden="true" style={{ fontSize: '14px', lineHeight: 1 }}>
-                    ↑
-                  </span>
                   <span>
                     {uploadingLogo
                       ? lang === 'de'
@@ -1144,18 +1464,52 @@ export default function StoreDashboard() {
             </div>
 
             {user?.storeName && (
-              <div className="gw-profile-box">
-                <div className="gw-profile-label">
+              <div
+                className="gw-profile-box"
+                style={{
+                  background: 'rgba(24, 24, 27, 0.14)',
+                  border: '1px solid rgba(255, 255, 255, 0.16)',
+                  borderRadius: '14px',
+                  padding: '12px 14px',
+                }}
+              >
+                <div
+                  className="gw-profile-label"
+                  style={{ letterSpacing: '0.08em', fontSize: '11px' }}
+                >
                   {lang === 'de' ? 'Geschäft' : 'Store'}
                 </div>
-                <div className="gw-profile-value">{user.storeName}</div>
+                <div
+                  className="gw-profile-value"
+                  style={{ fontSize: '15px', fontWeight: 700, marginTop: '4px' }}
+                >
+                  {user.storeName}
+                </div>
               </div>
             )}
 
             {user?.email && (
-              <div className="gw-profile-box">
-                <div className="gw-profile-label">Email</div>
-                <div className="gw-profile-value">{user.email}</div>
+              <div
+                className="gw-profile-box"
+                style={{
+                  background: 'rgba(24, 24, 27, 0.14)',
+                  border: '1px solid rgba(255, 255, 255, 0.16)',
+                  borderRadius: '14px',
+                  padding: '12px 14px',
+                }}
+              >
+                <div
+                  className="gw-profile-label"
+                  style={{ letterSpacing: '0.08em', fontSize: '11px' }}
+                >
+                  Email
+                </div>
+                <div
+                  className="gw-profile-value"
+                  style={{ fontSize: '14px', fontWeight: 600, marginTop: '4px' }}
+                >
+                  {user.email}
+                </div>
               </div>
             )}
           </div>
@@ -1249,6 +1603,47 @@ export default function StoreDashboard() {
           }`}
         >
           <div className="gw-container">
+            {isImpersonating && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '10px 16px',
+                  marginBottom: '16px',
+                  borderRadius: '12px',
+                  backgroundColor: '#f3e8ff',
+                  border: '1px solid #d8b4fe',
+                  color: '#4c1d95',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                }}
+              >
+                <span>
+                  {lang === 'de' ? 'Ansicht Geschäft:' : 'Viewing store:'}{' '}
+                  <strong>{user?.storeName || user?.name}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleExitImpersonation}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #7c3aed',
+                    backgroundColor: '#7c3aed',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {lang === 'de' ? 'Ansicht beenden' : 'Exit View'}
+                </button>
+              </div>
+            )}
+
             {statusMsg && (
               <div
                 key={`status-${statusMsg}`}
@@ -2323,7 +2718,7 @@ export default function StoreDashboard() {
                   </form>
                 </div>
 
-                <div className="gw-card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div className="gw-card gw-offers-table-card" style={{ padding: 0, overflow: 'hidden' }}>
                   <div className="gw-table-wrap">
                     <table className="gw-table">
                       <thead>
@@ -2335,38 +2730,185 @@ export default function StoreDashboard() {
                         </tr>
                       </thead>
                       <tbody>
-                        {offers.map((o) => (
-                          <tr key={o.id} className="gw-table-row">
-                            <td style={{ width: '40%' }}>
-                              <strong>{o.title}</strong>
-                              {o.description ? (
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                  {o.description}
-                                </div>
-                              ) : null}
-                            </td>
-                            <td>{o.points_required}</td>
-                            <td>
-                              <span className={`gw-badge ${o.is_active ? 'gw-badge-active' : 'gw-badge-inactive'}`}>
-                                {o.is_active ? t('statusActive') : t('statusInactive')}
-                              </span>
-                            </td>
-                            <td>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleOffer(o)}
-                                className="gw-btn gw-btn-sm"
-                                style={
-                                  o.is_active
-                                    ? { backgroundColor: '#fee2e2', color: '#991b1b', borderColor: '#fecaca' }
-                                    : {}
-                                }
-                              >
-                                {o.is_active ? t('actionDisable') : t('actionEnable')}
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                        {offers.map((o) => {
+                          const isEditing = editingOfferId === o.id;
+                          const isDeleting = deletingOfferId === o.id;
+
+                          return (
+                            <tr key={o.id} className="gw-table-row">
+                              {isEditing ? (
+                                <td colSpan={4} style={{ width: '100%', padding: '14px 16px' }}>
+                                  <form
+                                    onSubmit={(e) => handleUpdateOffer(e, o.id)}
+                                    className="gw-offer-edit-inline-grid gw-offer-edit-mobile-stack"
+                                  >
+                                    <input
+                                      type="text"
+                                      required
+                                      className="gw-input"
+                                      value={editOfferTitle}
+                                      onChange={(e) => setEditOfferTitle(e.target.value)}
+                                      placeholder={t('offerTitleLabel')}
+                                    />
+                                    <input
+                                      type="text"
+                                      className="gw-input"
+                                      value={editOfferDescription}
+                                      onChange={(e) => setEditOfferDescription(e.target.value)}
+                                      placeholder={t('offerDescriptionLabel')}
+                                    />
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      required
+                                      className="gw-input"
+                                      value={editPointsRequired}
+                                      onChange={(e) => setEditPointsRequired(e.target.value)}
+                                      placeholder={t('pointsRequiredLabel')}
+                                    />
+                                    <div className="gw-offer-edit-actions">
+                                      <button
+                                        type="submit"
+                                        disabled={savingEditOffer}
+                                        className="gw-btn gw-btn-primary gw-btn-sm"
+                                      >
+                                        {savingEditOffer
+                                          ? lang === 'de'
+                                            ? 'Speichert...'
+                                            : 'Saving...'
+                                          : lang === 'de'
+                                          ? 'Speichern'
+                                          : 'Save'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={cancelEditOffer}
+                                        className="gw-btn gw-btn-sm"
+                                      >
+                                        {lang === 'de' ? 'Abbrechen' : 'Cancel'}
+                                      </button>
+                                    </div>
+                                  </form>
+                                </td>
+                              ) : (
+                                <>
+                                  <td className="gw-offer-first-col">
+                                    <strong>{o.title}</strong>
+                                    {o.description ? (
+                                      <div
+                                        style={{
+                                          fontSize: '13px',
+                                          color: 'var(--text-secondary)',
+                                          marginTop: '2px',
+                                        }}
+                                      >
+                                        {o.description}
+                                      </div>
+                                    ) : null}
+
+                                    <div className="gw-offer-mobile-meta">
+                                      <span style={{ fontSize: '13px', fontWeight: 700 }}>
+                                        {o.points_required} pts
+                                      </span>
+                                      <span
+                                        className={`gw-badge ${
+                                          o.is_active ? 'gw-badge-active' : 'gw-badge-inactive'
+                                        }`}
+                                      >
+                                        {o.is_active ? t('statusActive') : t('statusInactive')}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  <td className="gw-offer-desktop-col">{o.points_required}</td>
+
+                                  <td className="gw-offer-desktop-col">
+                                    <span
+                                      className={`gw-badge ${
+                                        o.is_active ? 'gw-badge-active' : 'gw-badge-inactive'
+                                      }`}
+                                    >
+                                      {o.is_active ? t('statusActive') : t('statusInactive')}
+                                    </span>
+                                  </td>
+
+                                  <td>
+                                    <div className="gw-offer-actions gw-offer-mobile-footer">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleOffer(o)}
+                                        className="gw-btn gw-btn-sm"
+                                        style={
+                                          o.is_active
+                                            ? {
+                                                backgroundColor: '#fee2e2',
+                                                color: '#991b1b',
+                                                borderColor: '#fecaca',
+                                              }
+                                            : {}
+                                        }
+                                      >
+                                        {o.is_active ? t('actionDisable') : t('actionEnable')}
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditOffer(o)}
+                                        className="gw-offer-icon-btn gw-offer-edit-btn"
+                                        title={lang === 'de' ? 'Bearbeiten' : 'Edit offer'}
+                                        aria-label={lang === 'de' ? 'Bearbeiten' : 'Edit offer'}
+                                      >
+                                        <svg
+                                          width="14"
+                                          height="14"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2.1"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          aria-hidden="true"
+                                        >
+                                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                                          <path d="m15 5 4 4" />
+                                        </svg>
+                                        <span>{lang === 'de' ? 'Bearbeiten' : 'Edit'}</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        disabled={isDeleting}
+                                        onClick={() => handleDeleteOffer(o)}
+                                        className="gw-offer-icon-btn gw-offer-delete-btn"
+                                        title={lang === 'de' ? 'Löschen' : 'Delete offer'}
+                                        aria-label={lang === 'de' ? 'Löschen' : 'Delete offer'}
+                                      >
+                                        <svg
+                                          width="14"
+                                          height="14"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2.1"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          aria-hidden="true"
+                                        >
+                                          <path d="M3 6h18" />
+                                          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                          <line x1="10" y1="11" x2="10" y2="17" />
+                                          <line x1="14" y1="11" x2="14" y2="17" />
+                                        </svg>
+                                        <span>{lang === 'de' ? 'Löschen' : 'Delete'}</span>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
